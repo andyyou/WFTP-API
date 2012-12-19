@@ -5,6 +5,7 @@ require 'RMagick'
 require 'mimemagic'
 require 'fileutils'
 require 'tiny_tds'
+require 'find'
 
 # Authorization information
 $apiKey = "15eb7a42cce1ab9822caa1f8aaa65a494d38d19654886e67c0a6b15edcdcfde7"
@@ -24,7 +25,8 @@ def CheckAccessibility (key)
 end
 
 get '/check' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}")
 		return "true"
 	else
@@ -33,11 +35,12 @@ get '/check' do
 end
 
 get '/checkrename' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil? || params[:n].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}")
-		return "true" if "#{params[:p]}" == "#{params[:n]}"
+		return "true" if params[:p] == params[:n]
                 newPath = "#{$ftpRootPath}#{params[:n]}"
-                if File.exists?("#{newPath}")
+                if File.exists?(newPath)
                         return "false"
                 else
                         return "true"
@@ -48,21 +51,24 @@ get '/checkrename' do
 end
 
 get '/getsize' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
         if File.exist?("#{$ftpRootPath}#{params[:p]}")
                 return File.size("#{$ftpRootPath}#{params[:p]}").to_s
         end
 end
 
 get '/dir' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}")
-		return Dir.glob("#{$ftpRootPath}#{params[:p]}*").join(",").gsub($ftpRootPath,"")
+		return Dir.glob("#{$ftpRootPath}#{params[:p]}*").join(",").gsub($ftpRootPath, "")
 	end
 end
 
 get '/mkdir' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	if !File.exist?("#{$ftpRootPath}#{params[:p]}")
 		Dir.mkdir("#{$ftpRootPath}#{params[:p]}")
 		File.chmod(0777, "#{$ftpRootPath}#{params[:p]}")
@@ -74,9 +80,10 @@ get '/mkdir' do
 end
 
 get '/rmdir' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}") && File.writable?("#{$ftpRootPath}#{params[:p]}")
-		trashRelativePath = "#{params[:p][0, params[:p].rindex('/')]}"
+		trashRelativePath = params[:p][0, params[:p].rindex('/')]
 
 		if !File.exist?("#{$ftpTrashPath}#{trashRelativePath}")
 			FileUtils.mkdir_p("#{$ftpTrashPath}#{trashRelativePath}")
@@ -92,14 +99,15 @@ get '/rmdir' do
 end
 
 get '/rename' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil? || params[:n].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}") && File.writable?("#{$ftpRootPath}#{params[:p]}")
-		return "true" if "#{params[:p]}" == "#{params[:n]}"
+		return "true" if params[:p] == params[:n]
 		newPath = "#{$ftpRootPath}#{params[:n]}"
-		if File.exists?("#{newPath}")
+		if File.exists?(newPath)
 			return "false"
 		else
-			FileUtils.mv("#{$ftpRootPath}#{params[:p]}", "#{newPath}")
+			FileUtils.mv("#{$ftpRootPath}#{params[:p]}", newPath)
 
 			return "true"
 		end
@@ -109,7 +117,8 @@ get '/rename' do
 end
 
 get '/deletefile' do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}")
 		FileUtils.rm_f("#{$ftpRootPath}#{params[:p]}")
 
@@ -120,7 +129,8 @@ get '/deletefile' do
 end
 
 get '/thumb'do
-	return "Access Denied!" if !CheckAccessibility "#{params[:key]}"
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	path = "#{$ftpRootPath}#{params[:p]}"
 	return if !File.exist?(path)
 	width, height = 120, 120
@@ -154,7 +164,9 @@ get '/getfoldercount' do
 	
 end
 
-get '/createcategory' do
+get '/createcategorys' do
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:p].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}") && File.writable?("#{$ftpRootPath}#{params[:p]}")
 		client = TinyTds::Client.new(:username => $dbUsername, :password => $dbPassword, :host => $dbHost, :database => $dbTableName)
 		result = client.execute("SELECT [ClassName] FROM [dbo].[FileCategorys]")
@@ -169,4 +181,43 @@ get '/createcategory' do
         else
                 return "false"
         end
+end
+
+get '/renamecategorys' do
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:n].nil? || params[:nn].nil?
+	return "0" if params[:n] == params[:nn]
+	matchCount = "0"
+	Find.find($ftpRootPath) do |path|
+		if path.match(/WFTP\/[\w ]+\/[\w ]+\/[\w ]+\/[\w ]+\/#{params[:n]}$/)
+			matchCount = matchCount + 1
+			newPath = path[0, path.rindex(params[:n])] + params[:nn]
+			if File.exists?(newPath)
+				return "-1"
+			else
+				FileUtils.mv(path, newPath)
+			end
+		end
+	end
+	return matchCount.to_s
+end
+
+get '/removecategorys' do
+	return "false" if params[:n].nil?
+	matchCount = 0
+	Find.find($ftpRootPath) do |path|
+                if path.match(/WFTP\/[\w ]+\/[\w ]+\/[\w ]+\/[\w ]+\/#{params[:n]}$/)
+			matchCount = matchCount + 1
+			oldPath = path.gsub($ftpRootPath, "")
+			trashRelativePath = oldPath[0, oldPath.rindex('/')]
+
+			if !File.exist?("#{$ftpTrashPath}#{trashRelativePath}")
+				FileUtils.mkdir_p("#{$ftpTrashPath}#{trashRelativePath}")
+				File.chmod(0777, "#{$ftpTrashPath}#{trashRelativePath}")
+			end
+
+			FileUtils.mv(path, "#{$ftpTrashPath}#{trashRelativePath}")
+		end
+	end
+	return matchCount.to_s
 end
