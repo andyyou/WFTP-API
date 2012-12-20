@@ -1,3 +1,3 @@
-require './image'
+require './api'
 
 run Sinatra::Application
