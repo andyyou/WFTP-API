@@ -88,9 +88,12 @@ get '/rmdir' do
 		if !File.exist?("#{$ftpTrashPath}#{trashRelativePath}")
 			FileUtils.mkdir_p("#{$ftpTrashPath}#{trashRelativePath}")
 			File.chmod(0777, "#{$ftpTrashPath}#{trashRelativePath}")
+			FileUtils.mv("#{$ftpRootPath}#{params[:p]}", "#{$ftpTrashPath}#{trashRelativePath}")
+		else
+			FileUtils.cp_r("#{$ftpRootPath}#{params[:p]}", "#{$ftpTrashPath}#{trashRelativePath}")
 		end
 
-		FileUtils.mv("#{$ftpRootPath}#{params[:p]}", "#{$ftpTrashPath}#{trashRelativePath}")
+		FileUtils.rm_rf("#{$ftpRootPath}#{params[:p]}", "#{$ftpTrashPath}#{trashRelativePath}")
 
 		return "true"
 	else
@@ -183,6 +186,27 @@ get '/createcategorys' do
         end
 end
 
+get '/addcategory' do
+	return "Access Denied!" if !CheckAccessibility params[:key]
+	return "false" if params[:n].nil?
+	paths = Array.new
+	Find.find($ftpRootPath) do |path|
+		if path.match(/WFTP\/[\w ]+\/[\w ]+\/[\w ]+\/[\w ]+\//) && !path.match("/WFTP\/Trash/")
+			newPath = path[/#{$ftpRootPath}\/[\w ]+\/[\w ]+\/[\w ]+\/[\w ]+\//] + params[:n]
+			if !File.exist?(newPath)
+				paths.push(newPath)
+			end
+		end
+	end
+	# remove duplicate elements from array
+	paths.uniq!
+	paths.each do |path|
+		Dir.mkdir(path)
+		File.chmod(0777, path)
+	end
+	return "true"
+end
+
 get '/renamecategorys' do
 	return "Access Denied!" if !CheckAccessibility params[:key]
 	return "false" if params[:n].nil? || params[:nn].nil?
@@ -203,6 +227,7 @@ get '/renamecategorys' do
 end
 
 get '/removecategorys' do
+	return "Access Denied!" if !CheckAccessibility params[:key]
 	return "false" if params[:n].nil?
 	matchCount = 0
 	Find.find($ftpRootPath) do |path|
@@ -214,9 +239,12 @@ get '/removecategorys' do
 			if !File.exist?("#{$ftpTrashPath}#{trashRelativePath}")
 				FileUtils.mkdir_p("#{$ftpTrashPath}#{trashRelativePath}")
 				File.chmod(0777, "#{$ftpTrashPath}#{trashRelativePath}")
+				FileUtils.mv(path, "#{$ftpTrashPath}#{trashRelativePath}")
+			else
+				FileUtils.cp_r(path, "#{$ftpTrashPath}#{trashRelativePath}")
 			end
 
-			FileUtils.mv(path, "#{$ftpTrashPath}#{trashRelativePath}")
+			FileUtils.rm_rf(path)
 		end
 	end
 	return matchCount.to_s
