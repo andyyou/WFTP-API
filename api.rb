@@ -1,3 +1,4 @@
+# encoding: UTF-8
 require 'rubygems'
 require 'bundler/setup'
 require 'sinatra'
@@ -93,7 +94,7 @@ get '/rmdir' do
 			FileUtils.cp_r("#{$ftpRootPath}#{params[:p]}", "#{$ftpTrashPath}#{trashRelativePath}")
 		end
 
-		FileUtils.rm_rf("#{$ftpRootPath}#{params[:p]}", "#{$ftpTrashPath}#{trashRelativePath}")
+		FileUtils.rm_rf("#{$ftpRootPath}#{params[:p]}")
 
 		return "true"
 	else
@@ -164,7 +165,48 @@ get '/thumb'do
 end
 
 get '/getfoldercount' do
-	
+	splitPath = params[:p].split('/').reject(&:empty?)
+	level = splitPath.count
+
+	# Combination SQL command -- Start
+	entityPath = "/#{splitPath[0]}"
+	sqlSelect = "T2.[CompanyName] AS Name"
+	sqlFrom = "[WFTP].[dbo].[Lv1Classifications] T1
+                   , [WFTP].[dbo].[Lv2Customers] T2"
+	sqlCondition = "T1.[ClassName] = '#{splitPath[0]}' AND T2.[ClassifyId] = T1.[ClassifyId]"
+
+	if level >= 2
+		entityPath = "#{entityPath}/#{splitPath[1]}"
+		sqlSelect = "T3.[BranchName] AS Name"
+		sqlFrom = sqlFrom + ", [WFTP].[dbo].[Lv3CustomerBranches] T3"
+		sqlCondition = sqlCondition + "AND T2.[CompanyName] = '#{splitPath[1]}' AND T3.[CompanyId] = T2.[CompanyId]"
+	end
+
+	if level >= 3
+		entityPath = "#{entityPath}/#{splitPath[2]}"
+		sqlSelect = "T4.[LineName] AS Name"
+		sqlFrom = sqlFrom + ", [WFTP].[dbo].[Lv4Lines] T4"
+		sqlCondition = sqlCondition + "AND T3.[BranchName] = '#{splitPath[2]}' AND T4.[BranchId] = T3.[BranchId]"
+	end
+
+	if level > 4
+		entityPath = "#{entityPath}/#{splitPath[3]}/#{splitPath[4]}"
+		sqlSelect = "T6.[FileName] As Name"
+		sqlFrom = sqlFrom + ", [WFTP].[dbo].[FileCategorys] T5, [WFTP].[dbo].[Files] T6"
+		sqlCondition = sqlCondition + "AND T5.[ClassName] = '#{splitPath[4]}' AND T4.[LineName] = '#{splitPath[3]}' AND T6.[LineId] = T4.[LineId] AND T6.[FileCategoryId] = T5.[FileCategoryId]"
+	end
+	# Combination SQL command -- End
+
+	existDir = Dir.glob("#{$ftpRootPath}#{entityPath}/*").map { |directory| directory.gsub!("#{$ftpRootPath}#{entityPath}/", "") }
+
+	client = TinyTds::Client.new(:username => $dbUsername, :password => $dbPassword, :host => $dbHost, :database => $dbTableName)
+	result = client.execute("SELECT #{sqlSelect} FROM #{sqlFrom} WHERE #{sqlCondition}")
+
+	count = 0
+	result.each { |row|
+		count = count + 1 if existDir.include?(row["Name"].encode("UTF-8", "BIG5"))
+	}
+	return count.to_s
 end
 
 get '/createcategorys' do
@@ -172,7 +214,7 @@ get '/createcategorys' do
 	return "false" if params[:p].nil?
 	if File.exist?("#{$ftpRootPath}#{params[:p]}") && File.writable?("#{$ftpRootPath}#{params[:p]}")
 		client = TinyTds::Client.new(:username => $dbUsername, :password => $dbPassword, :host => $dbHost, :database => $dbTableName)
-		result = client.execute("SELECT [ClassName] FROM [dbo].[FileCategorys]")
+		result = client.execute("SELECT [ClassName] FROM [WFTP].[dbo].[FileCategorys]")
 		result.each { |category|
 			folderName = category["ClassName"]
 			if !File.exist?("#{$ftpRootPath}#{params[:p]}/#{folderName}")
@@ -211,7 +253,7 @@ get '/renamecategorys' do
 	return "Access Denied!" if !CheckAccessibility params[:key]
 	return "false" if params[:n].nil? || params[:nn].nil?
 	return "0" if params[:n] == params[:nn]
-	matchCount = "0"
+	matchCount = 0
 	Find.find($ftpRootPath) do |path|
 		if path.match(/WFTP\/[\w ]+\/[\w ]+\/[\w ]+\/[\w ]+\/#{params[:n]}$/)
 			matchCount = matchCount + 1
